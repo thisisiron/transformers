@@ -62,6 +62,7 @@ from ..chameleon.modeling_chameleon import (
 )
 from ..idefics.modeling_idefics import IdeficsBaseModelOutputWithPast, IdeficsCausalLMOutputWithPast
 from ..llama.modeling_llama import eager_attention_forward
+from ..llava.modeling_llava import LlavaForConditionalGeneration, LlavaModel
 from ..siglip.configuration_siglip import SiglipVisionConfig
 from ..siglip.modeling_siglip import SiglipEncoder, SiglipEncoderLayer, SiglipVisionEmbeddings
 
@@ -892,13 +893,18 @@ class JanusVQVAEHead(nn.Module):
     The Janus model which consists of a siglip vision backbone, a Llama language model and a VQ model.
     """
 )
-class JanusModel(JanusPreTrainedModel):
+class JanusModel(LlavaModel):
+    _checkpoint_conversion_mapping = {}
+
     def __init__(self, config: JanusConfig):
         super().__init__(config)
-        self.config = config
+
+        del self.vision_tower
+        del self.multi_modal_projector
+
         # This is necessary for backward compatibility, see SiglipModel initialization
-        self.vision_model = JanusVisionModel._from_config(config.vision_config)
-        self.aligner = JanusVisionAlignerMLP(self.vision_model.config)
+        self.vision_tower = JanusVisionModel._from_config(config.vision_config)
+        self.aligner = JanusVisionAlignerMLP(self.vision_tower.config)
 
         self.vqmodel = JanusVQVAE._from_config(config.vq_config)
 
@@ -911,17 +917,14 @@ class JanusModel(JanusPreTrainedModel):
         self.language_model = AutoModel.from_config(config=config.text_config)
 
         self.gradient_checkpointing = False
-        # Initialize weights and apply final processing.
-        self.post_init()
 
-    def get_input_embeddings(self):
-        return self.language_model.get_input_embeddings()
-
-    def set_input_embeddings(self, value):
-        self.language_model.set_input_embeddings(value)
-
-    def get_image_features(self, pixel_values):
-        image_embeds = self.vision_model(pixel_values)
+    def get_image_features(self, pixel_values: torch.FloatTensor):
+        r"""
+        Args:
+            pixel_values (`torch.FloatTensor` of shape `(batch_size, channels, height, width)`):
+                The tensors corresponding to the input images.
+        """
+        image_embeds = self.vision_tower(pixel_values)
         image_embeds = self.aligner(image_embeds.last_hidden_state)
         return image_embeds
 
@@ -982,41 +985,25 @@ class JanusModel(JanusPreTrainedModel):
         )
 
 
-class JanusForConditionalGeneration(JanusPreTrainedModel, GenerationMixin):
+class JanusForConditionalGeneration(LlavaForConditionalGeneration, GenerationMixin):
+    _checkpoint_conversion_mapping = {}
     _tied_weights_keys = ["model.language_model.embed_tokens.weight", "lm_head.weight"]
     _supports_static_cache = True
 
     def __init__(self, config: JanusConfig):
         super().__init__(config)
-        self.config = config
-        self.model = JanusModel(config)
         self.lm_head = nn.Linear(config.text_config.hidden_size, config.text_config.vocab_size, bias=False)
-
-        # Initialize weights and apply final processing.
-        self.post_init()
-
-    def get_input_embeddings(self):
-        return self.model.language_model.get_input_embeddings()
-
-    def set_input_embeddings(self, value):
-        self.model.language_model.set_input_embeddings(value)
 
     def prepare_embeddings_for_image_generation(self, inputs: torch.Tensor) -> torch.Tensor:
         hidden_state = self.model.generation_embeddings(inputs)
         hidden_state = self.model.generation_aligner(hidden_state)
         return hidden_state
 
-    def get_output_embeddings(self):
-        return self.lm_head
+    def get_image_features(self, pixel_values: torch.FloatTensor):
+        return self.model.get_image_features(pixel_values=pixel_values)
 
-    def set_output_embeddings(self, new_embeddings):
-        self.lm_head = new_embeddings
-
-    def set_decoder(self, decoder):
-        self.model = decoder
-
-    def get_decoder(self):
-        return self.model
+    def multi_modal_projector(self):
+        raise AttributeError("Not needed for Janus")
 
     @can_return_tuple
     @auto_docstring
@@ -1068,36 +1055,6 @@ class JanusForConditionalGeneration(JanusPreTrainedModel, GenerationMixin):
             attentions=outputs.attentions,
             image_hidden_states=outputs.image_hidden_states,
         )
-
-    def prepare_inputs_for_generation(
-        self,
-        input_ids,
-        pixel_values=None,
-        past_key_values=None,
-        attention_mask=None,
-        inputs_embeds=None,
-        cache_position=None,
-        logits_to_keep=None,
-        **kwargs,
-    ):
-        # Overwritten -- extra custom processing
-
-        model_inputs = super().prepare_inputs_for_generation(
-            input_ids,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            cache_position=cache_position,
-            logits_to_keep=logits_to_keep,
-            **kwargs,
-        )
-
-        # If we're in cached decoding stage, pixel values should be None because input ids do not contain special image token anymore
-        # Otherwise we need pixel values to be passed to model
-        if cache_position[0] == 0:
-            model_inputs["pixel_values"] = pixel_values
-
-        return model_inputs
 
     def decode_image_tokens(self, image_tokens: torch.Tensor):
         """
