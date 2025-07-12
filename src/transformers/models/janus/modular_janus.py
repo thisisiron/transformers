@@ -433,7 +433,7 @@ class JanusVQVAEOutput(ModelOutput):
     embedding_loss: torch.FloatTensor = None
 
 
-class JanusBaseModelOutputWithPast(IdeficsBaseModelOutputWithPast):
+class JanusModelOutputWithPast(IdeficsBaseModelOutputWithPast):
     pass
 
 
@@ -976,7 +976,7 @@ class JanusModel(LlavaModel):
             **kwargs,
         )
 
-        return JanusBaseModelOutputWithPast(
+        return JanusModelOutputWithPast(
             last_hidden_state=lm_output.last_hidden_state,
             past_key_values=lm_output.past_key_values,
             hidden_states=lm_output.hidden_states,

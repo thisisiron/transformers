@@ -31,7 +31,7 @@ from ...cache_utils import Cache
 from ...generation import ClassifierFreeGuidanceLogitsProcessor, GenerationMixin, GenerationMode, LogitsProcessorList
 from ...generation.utils import GenerateDecoderOnlyOutput
 from ...modeling_layers import GradientCheckpointingLayer
-from ...modeling_outputs import BaseModelOutput, BaseModelOutputWithPast, BaseModelOutputWithPooling, ModelOutput
+from ...modeling_outputs import BaseModelOutput, BaseModelOutputWithPooling, ModelOutput
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from ...processing_utils import Unpack
 from ...utils import (
@@ -111,7 +111,7 @@ class JanusVQVAEOutput(ModelOutput):
     Base class for Janus model's outputs that may also contain a past key/values (to speed up sequential decoding).
     """
 )
-class JanusBaseModelOutputWithPast(ModelOutput):
+class JanusModelOutputWithPast(ModelOutput):
     r"""
     last_hidden_state (`torch.FloatTensor` of shape `(batch_size, sequence_length, hidden_size)`):
         Sequence of hidden-states at the output of the last layer of the model.
@@ -1028,28 +1028,6 @@ class JanusVQVAEHead(nn.Module):
         return hidden_states
 
 
-@dataclass
-@auto_docstring(
-    custom_intro="""
-    Base class for Janus outputs, with hidden states and attentions.
-    """
-)
-class JanusModelOutputWithPast(BaseModelOutputWithPast):
-    r"""
-    past_key_values (`Cache`, *optional*, returned when `use_cache=True` is passed or when `config.use_cache=True`):
-        Tuple of `tuple(torch.FloatTensor)` of length `config.n_layers`, with each tuple having 2 tensors of shape
-        `(batch_size, num_heads, sequence_length, embed_size_per_head)`)
-
-        Contains pre-computed hidden-states (key and values in the self-attention blocks) that can be used (see
-        `past_key_values` input) to speed up sequential decoding.
-    image_hidden_states (`torch.FloatTensor`, *optional*):
-        A `torch.FloatTensor` of size `(batch_size, num_images, sequence_length, hidden_size)`.
-        image_hidden_states of the model produced by the vision encoder and after projecting the last hidden state.
-    """
-
-    image_hidden_states: Optional[torch.FloatTensor] = None
-
-
 @auto_docstring(
     custom_intro="""
     The Janus model which consists of a siglip vision backbone, a Llama language model and a VQ model.
@@ -1148,7 +1126,7 @@ class JanusModel(JanusPreTrainedModel):
             **kwargs,
         )
 
-        return JanusBaseModelOutputWithPast(
+        return JanusModelOutputWithPast(
             last_hidden_state=lm_output.last_hidden_state,
             past_key_values=lm_output.past_key_values,
             hidden_states=lm_output.hidden_states,
