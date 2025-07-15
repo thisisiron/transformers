@@ -43,18 +43,19 @@ from transformers.models.janus.image_processing_janus import JanusImageProcessor
 from transformers.models.janus.processing_janus import JanusProcessor
 
 
-# Mappings
+# Mappings - Updated to reflect vision_model -> vision_tower change
 MAPPINGS = {
-    # Vision model
-    r"(?<!gen_)vision_model\.vision_tower\.blocks\.(\d+)\.attn": r"model.vision_model.encoder.layers.\1.self_attn",
-    r"(?<!gen_)vision_model.vision_tower.blocks": "model.vision_model.encoder.layers",
-    r"(?<!gen_)vision_model.vision_tower.pos_embed": "model.vision_model.embeddings.position_embedding.weight",
-    r"(?<!gen_)vision_model.vision_tower.patch_embed.proj": "model.vision_model.embeddings.patch_embedding",
-    r"(?<!gen_)vision_model.vision_tower.norm": "model.vision_model.post_layernorm",
-    r"(?P<pre>\b(vision_model|model\.vision_model)\b.*\.)proj(?=\.|\s|$)": r"\g<pre>projection_layer",
-    r"(?P<pre>\b(vision_model|model\.vision_model)\b.*\.)norm(?=\.|\s|$)": r"\g<pre>layer_norm",
-    r"(?P<pre>\b(vision_model|model\.vision_model)\b.*\.)norm1(?=\.|\s|$)": r"\g<pre>layer_norm1",
-    r"(?P<pre>\b(vision_model|model\.vision_model)\b.*\.)norm2(?=\.|\s|$)": r"\g<pre>layer_norm2",
+    # Vision model - Updated mapping from vision_model to vision_tower
+    r"(?<!gen_)vision_model\.vision_tower\.blocks\.(\d+)\.attn": r"model.vision_tower.encoder.layers.\1.self_attn",
+    r"(?<!gen_)vision_model.vision_tower.blocks": "model.vision_tower.encoder.layers",
+    r"(?<!gen_)vision_model.vision_tower.pos_embed": "model.vision_tower.embeddings.position_embedding.weight",
+    r"(?<!gen_)vision_model.vision_tower.patch_embed.proj": "model.vision_tower.embeddings.patch_embedding",
+    r"(?<!gen_)vision_model.vision_tower.norm": "model.vision_tower.post_layernorm",
+    # Updated regex patterns to handle both vision_model and vision_tower
+    r"(?P<pre>\b(vision_model|model\.vision_tower)\b.*\.)proj(?=\.|\s|$)": r"\g<pre>projection_layer",
+    r"(?P<pre>\b(vision_model|model\.vision_tower)\b.*\.)norm(?=\.|\s|$)": r"\g<pre>layer_norm",
+    r"(?P<pre>\b(vision_model|model\.vision_tower)\b.*\.)norm1(?=\.|\s|$)": r"\g<pre>layer_norm1",
+    r"(?P<pre>\b(vision_model|model\.vision_tower)\b.*\.)norm2(?=\.|\s|$)": r"\g<pre>layer_norm2",
     r"\bvision_model\.vision_tower\.attn_pool\.[^\s$]*": None,
     # VQ Model
     r"gen_vision_model": "model.vqmodel",
@@ -161,8 +162,8 @@ def convert_state_dict_to_hf(state_dict):
             else:
                 converted_state_dict[new_key] = state_dict[old_key]
 
-    # Embeddings will not have initial dimension
-    pos_embed_key = "model.vision_model.embeddings.position_embedding.weight"
+    # Embeddings will not have initial dimension - Updated to use vision_tower
+    pos_embed_key = "model.vision_tower.embeddings.position_embedding.weight"
     converted_state_dict[pos_embed_key] = converted_state_dict[pos_embed_key].squeeze(0)
 
     return converted_state_dict
@@ -410,7 +411,7 @@ def convert_model(
     model.generation_config.temperature = 1
     model.generation_config.guidance_scale = 5
     model.generation_config.pad_token_id = tokenizer.vocab.get("<\uff5c\u2581pad\u2581\uff5c>")
-    model.generation_config.generation_kwargs["boi_token_id"] = tokenizer.vocab.get("<begin_of_image>")
+    model.generation_config.boi_token_id = tokenizer.vocab.get("<begin_of_image>")
 
     # Load and convert state dict
     print("Loading state dict...")
